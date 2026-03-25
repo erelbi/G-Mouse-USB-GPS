@@ -31,7 +31,17 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-asyncio"]
+api  = ["fastapi>=0.110", "uvicorn[standard]>=0.29"]
+mqtt = ["paho-mqtt>=2.0"]
+yaml = ["pyyaml>=6.0"]
+all  = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "paho-mqtt>=2.0", "pyyaml>=6.0"]
+dev  = ["pytest", "pytest-asyncio", "pytest-cov"]
+
+[project.scripts]
+gps-server = "gps_mouse.cli:cmd_server"
+gps-read   = "gps_mouse.cli:cmd_read"
+gps-log    = "gps_mouse.cli:cmd_log"
+gps-api    = "gps_mouse.cli:cmd_api"
 
 [project.urls]
 Homepage = "https://github.com/erelbi/G-Mouse-USB-GPS"

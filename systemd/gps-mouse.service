@@ -1,0 +1,30 @@
+[Unit]
+Description=GPS Mouse — USB GPS reader and ZMQ broadcaster
+After=network.target
+Documentation=https://github.com/erelbi/G-Mouse-USB-GPS
+
+[Service]
+Type=simple
+User=gps
+Group=dialout
+
+# Edit these as needed
+ExecStart=/usr/local/bin/gps-server \
+    --port /dev/ttyACM0 \
+    --baudrate 9600 \
+    --zmq tcp://127.0.0.1:5557 \
+    --api \
+    --api-port 8080
+
+Restart=on-failure
+RestartSec=5
+
+# Optional: load config from file
+# ExecStart=/usr/local/bin/gps-server --config /etc/gps-mouse/config.yml
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gps-mouse
+
+[Install]
+WantedBy=multi-user.target

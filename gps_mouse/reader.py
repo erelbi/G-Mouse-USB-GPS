@@ -43,10 +43,14 @@ class GPSReader:
         port: str = DEFAULT_PORT,
         baudrate: int = DEFAULT_BAUDRATE,
         timeout: float = 2.0,
+        reconnect: bool = True,
+        reconnect_delay: float = 5.0,
     ) -> None:
         self.port = port
         self.baudrate = baudrate
         self.timeout = timeout
+        self.reconnect = reconnect
+        self.reconnect_delay = reconnect_delay
 
         self._callbacks: list[GPSCallback] = []
         self._queues: list[asyncio.Queue[GPSData]] = []
@@ -131,14 +135,32 @@ class GPSReader:
             raise GPSDeviceNotFound(f"Could not open port: {self.port} — {e}") from e
 
     def _run(self) -> None:
-        try:
-            self._serial = self._open_serial()
-        except Exception as e:
-            logger.error("Failed to open serial port: %s", e)
-            return
+        while not self._stop_event.is_set():
+            try:
+                self._serial = self._open_serial()
+                logger.info("Connected to %s", self.port)
+            except GPSPermissionError:
+                raise  # permission errors are not recoverable
+            except Exception as e:
+                if not self.reconnect:
+                    logger.error("Failed to open serial port: %s", e)
+                    return
+                logger.warning("Port unavailable (%s), retrying in %ss…", e, self.reconnect_delay)
+                self._stop_event.wait(self.reconnect_delay)
+                continue
 
-        partial: dict = {}  # accumulates GGA, RMC, VTG messages
+            partial: dict = {}
+            self._read_loop(partial)
 
+            if self._serial and self._serial.is_open:
+                self._serial.close()
+
+            if not self.reconnect or self._stop_event.is_set():
+                break
+            logger.warning("Disconnected from %s, reconnecting in %ss…", self.port, self.reconnect_delay)
+            self._stop_event.wait(self.reconnect_delay)
+
+    def _read_loop(self, partial: dict) -> None:
         while not self._stop_event.is_set():
             try:
                 raw = self._serial.readline()
@@ -155,7 +177,7 @@ class GPSReader:
 
             except serial.SerialException as e:
                 logger.error("Serial read error: %s", e)
-                break
+                return  # trigger reconnect
             except Exception as e:
                 logger.debug("Line processing error: %s", e)
 

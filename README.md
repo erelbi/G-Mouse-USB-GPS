@@ -1,15 +1,24 @@
 # gps-mouse 🛰️
 
-A lightweight Python library for reading data from U-Blox GPS devices and distributing it to multiple projects via ZMQ pub/sub.
+[![PyPI version](https://img.shields.io/pypi/v/gps-mouse.svg)](https://pypi.org/project/gps-mouse/)
+[![Python](https://img.shields.io/pypi/pyversions/gps-mouse.svg)](https://pypi.org/project/gps-mouse/)
+[![Tests](https://github.com/erelbi/G-Mouse-USB-GPS/actions/workflows/tests.yml/badge.svg)](https://github.com/erelbi/G-Mouse-USB-GPS/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+A lightweight Python library for reading data from U-Blox GPS devices and distributing it to multiple projects via ZMQ, REST API, MQTT, or file logging.
 
 ## Features
 
-- Reads NMEA sentences (GGA, RMC, VTG) from any serial GPS device
-- Parses latitude, longitude, altitude, speed, heading, satellite count, HDOP
-- Distributes data via **callbacks** (in-process) or **ZMQ pub/sub** (inter-process)
-- Supports both **synchronous** and **async/await** usage
-- Built-in speed noise filter for stationary readings
-- Context manager support
+- Read NMEA sentences (GGA, RMC, VTG) from any serial GPS device
+- **Auto-reconnect** when device is unplugged and re-plugged
+- **ZMQ pub/sub** — distribute to multiple projects simultaneously
+- **REST API + Live map dashboard** — browser-based Leaflet.js map
+- **MQTT** — publish to any MQTT broker (Home Assistant, Node-RED, etc.)
+- **CSV + GPX logging** — record tracks for later analysis
+- **gpsd support** — use the standard Linux GPS daemon
+- **CLI tools** — `gps-server`, `gps-read`, `gps-log`, `gps-api`
+- **Docker** — single-command deployment
+- **Sync and async** support
 
 ## Tested Device
 
@@ -24,31 +33,50 @@ Works with any NMEA-compatible GPS device.
 ## Installation
 
 ```bash
+# Core library
 pip install gps-mouse
+
+# With REST API + dashboard
+pip install "gps-mouse[api]"
+
+# With MQTT support
+pip install "gps-mouse[mqtt]"
+
+# With YAML config support
+pip install "gps-mouse[yaml]"
+
+# Everything
+pip install "gps-mouse[all]"
 ```
 
-Or install from source:
-
-```bash
-git clone https://github.com/YOUR_USERNAME/gps-mouse.git
-cd gps-mouse
-pip install -e .
-```
-
-### System permission
-
-The GPS device requires `dialout` group access on Linux:
+### System permission (Linux)
 
 ```bash
 sudo usermod -aG dialout $USER
-# Re-login or run: newgrp dialout
+newgrp dialout
 ```
 
 ---
 
 ## Quick Start
 
-### Read and print GPS data
+### CLI
+
+```bash
+# Read and print GPS data
+gps-read
+
+# Start server with ZMQ + live map
+gps-server --api
+
+# Log to CSV + GPX
+gps-log --csv track.csv --gpx track.gpx
+
+# REST API + dashboard only
+gps-api
+```
+
+### Python — read data
 
 ```python
 import time
@@ -57,55 +85,120 @@ from gps_mouse import GPSReader
 def on_data(data):
     if data.has_fix:
         print(f"lat={data.latitude:.6f}  lon={data.longitude:.6f}  alt={data.altitude}m")
-    else:
-        print(f"[NO FIX] sats={data.num_satellites}")
 
 with GPSReader() as reader:
     reader.add_callback(on_data)
     time.sleep(60)
 ```
 
-### Broadcast to other projects (ZMQ)
+### Python — ZMQ broadcast + subscribe
 
-**Server** — reads GPS and broadcasts:
 ```python
+# Server (reads GPS, broadcasts)
 from gps_mouse import GPSReader, GPSPublisher
 
 reader = GPSReader()
 pub = GPSPublisher()
 pub.attach(reader)
 reader.start()
-```
 
-**Client** — any other project subscribes:
-```python
+# Client (any other project)
 from gps_mouse import GPSSubscriber
 
 for data in GPSSubscriber().iter_fixes():
     print(data.latitude, data.longitude)
 ```
 
-### Async usage
+### Python — REST API + live map
 
 ```python
-import asyncio
 from gps_mouse import GPSReader
+from gps_mouse.api import GPSApi
 
-async def main():
-    async for data in GPSReader().stream():
-        print(data)
-
-asyncio.run(main())
+reader = GPSReader()
+reader.start()
+GPSApi(reader, port=8080).serve()
+# Open http://localhost:8080 in browser
 ```
 
-### Wait for first fix
+### Python — MQTT
 
 ```python
-from gps_mouse import GPSSubscriber
+from gps_mouse import GPSReader
+from gps_mouse.mqtt import GPSMQTTPublisher
 
-data = GPSSubscriber().wait_for_fix(timeout=30)
-if data:
-    print(f"{data.latitude:.6f}, {data.longitude:.6f}")
+reader = GPSReader()
+mqtt = GPSMQTTPublisher(broker="localhost", topic="gps/data")
+mqtt.attach(reader)
+reader.start()
+```
+
+### Python — CSV + GPX logging
+
+```python
+import time
+from gps_mouse import GPSReader
+from gps_mouse.logger import GPSLogger
+
+with GPSLogger(csv_path="track.csv", gpx_path="track.gpx") as log:
+    with GPSReader() as reader:
+        reader.add_callback(log.record)
+        time.sleep(3600)
+```
+
+### Config file
+
+```bash
+cp config.example.yml config.yml
+# Edit config.yml
+gps-server --config config.yml
+```
+
+---
+
+## Docker
+
+```bash
+# Start with docker-compose
+docker compose up -d
+
+# Open dashboard
+open http://localhost:8080
+```
+
+---
+
+## systemd Service
+
+```bash
+sudo cp systemd/gps-mouse.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now gps-mouse
+sudo journalctl -u gps-mouse -f
+```
+
+---
+
+## Architecture
+
+```
+GPS Device (/dev/ttyACM0 or gpsd)
+       │
+   GPSReader  ─────────────────────────────────────────
+       │
+       ├──► GPSPublisher (ZMQ PUB :5557)
+       │         └─► Project A, B, C (GPSSubscriber)
+       │
+       ├──► GPSMQTTPublisher → MQTT Broker
+       │         └─► Home Assistant, Node-RED, …
+       │
+       ├──► GPSApi (FastAPI :8080)
+       │         ├─► GET /gps        (latest fix JSON)
+       │         ├─► GET /gps/stream (SSE stream)
+       │         ├─► WS  /gps/ws     (WebSocket)
+       │         └─► GET /           (live map)
+       │
+       └──► GPSLogger → CSV / GPX files
 ```
 
 ---
@@ -126,30 +219,6 @@ if data:
 | `timestamp` | `datetime` | UTC timestamp from device |
 | `has_fix` | `bool` | True if a valid position fix exists |
 
-### Serialization
-
-```python
-data.to_dict()   # → Python dict
-data.to_json()   # → JSON string
-
-GPSData.from_json(json_str)   # deserialize
-GPSData.from_dict(d)
-```
-
----
-
-## Architecture
-
-```
-GPS Device (/dev/ttyACM0)
-       │
-   GPSReader  ──callback──▶  GPSPublisher (ZMQ PUB :5557)
-                                    │
-                          ┌─────────┼─────────┐
-                       Project A  Project B  Project C
-                      (GPSSubscriber)
-```
-
 ---
 
 ## Examples
@@ -158,27 +227,34 @@ GPS Device (/dev/ttyACM0)
 |---|---|
 | `examples/01_basic_read.py` | Print GPS values to terminal |
 | `examples/02_zmq_server.py` | Read GPS and broadcast over ZMQ |
-| `examples/03_zmq_client.py` | Subscribe to GPS from another project |
-| `examples/04_async_stream.py` | Async producer/consumer pattern |
-| `examples/05_wait_for_fix.py` | Block until first fix is acquired |
+| `examples/03_zmq_client.py` | Subscribe from another project |
+| `examples/04_async_stream.py` | Async producer/consumer |
+| `examples/05_wait_for_fix.py` | Block until first fix |
 
 ---
 
 ## Requirements
 
 - Python 3.10+
-- pyserial
-- pynmea2
-- pyzmq
+- pyserial, pynmea2, pyzmq *(core)*
+- fastapi, uvicorn *(optional — `[api]`)*
+- paho-mqtt *(optional — `[mqtt]`)*
+- pyyaml *(optional — `[yaml]`)*
 
 ---
 
 ## Contributing
 
-Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a pull request.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+---
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
 ## License
 
-[MIT](LICENSE) © 2026 ebilsel
+[MIT](LICENSE) © 2026 erelbi

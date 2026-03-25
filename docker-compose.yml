@@ -1,0 +1,31 @@
+services:
+  gps-mouse:
+    build: .
+    # Or use the published image:
+    # image: ghcr.io/erelbi/g-mouse-usb-gps:latest
+    container_name: gps-mouse
+    restart: unless-stopped
+
+    # Pass the USB GPS device into the container
+    devices:
+      - /dev/ttyACM0:/dev/ttyACM0
+
+    ports:
+      - "5557:5557"   # ZMQ pub/sub
+      - "8080:8080"   # REST API + dashboard
+
+    environment:
+      GPS_PORT: /dev/ttyACM0
+      GPS_BAUDRATE: "9600"
+      GPS_API_PORT: "8080"
+
+    # Optional: mount a config file
+    # volumes:
+    #   - ./config.yml:/app/config.yml
+    # command: ["gps-server", "--config", "/app/config.yml", "--api"]
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
