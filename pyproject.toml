@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gps-mouse"
+version = "0.1.0"
+description = "U-Blox GPS cihazından veri okuyup diğer projelere ileten kütüphane"
+requires-python = ">=3.10"
+dependencies = [
+    "pyserial>=3.5",
+    "pynmea2>=1.19",
+    "pyzmq>=25.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["gps_mouse*"]
