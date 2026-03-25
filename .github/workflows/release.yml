@@ -1,0 +1,180 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write  # GitHub Release oluşturmak için
+
+jobs:
+  # ------------------------------------------------------------------
+  # 1. Testleri geç, sonra devam et
+  # ------------------------------------------------------------------
+  test:
+    name: Tests before release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]" pytest-asyncio
+      - run: pytest tests/ -v
+
+  # ------------------------------------------------------------------
+  # 2. Platform binary'leri (PyInstaller)
+  # ------------------------------------------------------------------
+  build-binary:
+    name: Binary / ${{ matrix.os }}
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: gps-server-linux-x86_64
+            exe: gps-server
+          - os: macos-latest
+            artifact: gps-server-macos-x86_64
+            exe: gps-server
+          - os: windows-latest
+            artifact: gps-server-windows-x86_64
+            exe: gps-server.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install pyinstaller pyserial pynmea2 pyzmq
+
+      - name: Build binary (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          pyinstaller --onefile --name gps-server \
+            --add-data "gps_mouse:gps_mouse" \
+            examples/02_zmq_server.py
+
+      - name: Build binary (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          pyinstaller --onefile --name gps-server `
+            --add-data "gps_mouse;gps_mouse" `
+            examples/02_zmq_server.py
+
+      - name: Rename artifact
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            mv dist/gps-server.exe dist/${{ matrix.artifact }}.exe
+          else
+            mv dist/gps-server dist/${{ matrix.artifact }}
+          fi
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}*
+          if-no-files-found: error
+
+  # ------------------------------------------------------------------
+  # 3. PyPI wheel + sdist
+  # ------------------------------------------------------------------
+  build-wheel:
+    name: Build wheel & sdist
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build
+      - run: python -m build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-packages
+          path: dist/
+          if-no-files-found: error
+
+  # ------------------------------------------------------------------
+  # 4. PyPI'ye yayınla
+  # ------------------------------------------------------------------
+  publish-pypi:
+    name: Publish to PyPI
+    needs: [build-binary, build-wheel]
+    runs-on: ubuntu-latest
+    environment: pypi
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-packages
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_TOKEN }}
+
+  # ------------------------------------------------------------------
+  # 5. GitHub Release oluştur
+  # ------------------------------------------------------------------
+  github-release:
+    name: GitHub Release
+    needs: [build-binary, build-wheel]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Collect release files
+        run: |
+          mkdir release-files
+          cp artifacts/dist-packages/*.whl release-files/
+          cp artifacts/dist-packages/*.tar.gz release-files/
+          cp artifacts/gps-server-linux-x86_64/gps-server-linux-x86_64 release-files/
+          cp artifacts/gps-server-macos-x86_64/gps-server-macos-x86_64 release-files/
+          cp artifacts/gps-server-windows-x86_64/gps-server-windows-x86_64.exe release-files/
+          ls -lh release-files/
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: "gps-mouse ${{ steps.version.outputs.version }}"
+          body: |
+            ## gps-mouse ${{ steps.version.outputs.version }}
+
+            ### Install via pip
+            ```bash
+            pip install gps-mouse==${{ steps.version.outputs.version }}
+            ```
+
+            ### Standalone GPS Server Binaries
+            Download the binary for your platform and run directly — no Python required.
+
+            | Platform | File |
+            |---|---|
+            | Linux x86_64 | `gps-server-linux-x86_64` |
+            | macOS x86_64 | `gps-server-macos-x86_64` |
+            | Windows x86_64 | `gps-server-windows-x86_64.exe` |
+
+            **Linux/macOS:** `chmod +x gps-server-* && ./gps-server-linux-x86_64`
+
+          files: release-files/*
+          draft: false
+          prerelease: false
