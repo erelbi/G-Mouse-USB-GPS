@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.3] — 2026-03-25
+
+### Fixed
+- PyPI publish workflow: removed `environment` requirement, added explicit `user: __token__`
+
 ## [0.1.1] — 2026-03-25
 
 ### Added
