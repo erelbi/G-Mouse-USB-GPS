@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gps-mouse"
-version = "0.1.0"
+version = "0.1.1"
 description = "Read data from U-Blox GPS devices and distribute to multiple projects via ZMQ pub/sub"
 readme = "README.md"
 license = "MIT"
