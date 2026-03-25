@@ -194,20 +194,16 @@ class GPSReader:
         if gga and gga.timestamp:
             try:
                 ts = datetime.combine(now.date(), gga.timestamp, tzinfo=timezone.utc)
-            except Exception:
+            except (TypeError, ValueError, OverflowError):
                 pass
 
-        # Position
+        # Position — pynmea2's .latitude/.longitude already apply N/S/E/W sign
         lat = lon = None
         try:
-            if gga and gga.latitude:
-                lat = float(gga.latitude)
-                if gga.lat_dir == "S":
-                    lat = -lat
-            if gga and gga.longitude:
-                lon = float(gga.longitude)
-                if gga.lon_dir == "W":
-                    lon = -lon
+            if gga and gga.lat:
+                lat = gga.latitude
+            if gga and gga.lon:
+                lon = gga.longitude
         except (ValueError, AttributeError):
             pass
 
@@ -245,7 +241,7 @@ class GPSReader:
         # Fix quality
         fix_q = FixQuality.NO_FIX
         try:
-            if gga:
+            if gga and gga.gps_qual is not None:
                 fix_q = FixQuality(int(gga.gps_qual))
         except (ValueError, AttributeError):
             pass
