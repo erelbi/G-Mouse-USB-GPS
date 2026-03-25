@@ -5,8 +5,25 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "gps-mouse"
 version = "0.1.0"
-description = "U-Blox GPS cihazından veri okuyup diğer projelere ileten kütüphane"
+description = "Read data from U-Blox GPS devices and distribute to multiple projects via ZMQ pub/sub"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "erelbi" }]
 requires-python = ">=3.10"
+keywords = ["gps", "ublox", "nmea", "zmq", "serial", "location"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: GIS",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Operating System :: POSIX :: Linux",
+]
 dependencies = [
     "pyserial>=3.5",
     "pynmea2>=1.19",
@@ -15,6 +32,11 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-asyncio"]
+
+[project.urls]
+Homepage = "https://github.com/erelbi/G-Mouse-USB-GPS"
+Repository = "https://github.com/erelbi/G-Mouse-USB-GPS"
+Issues = "https://github.com/erelbi/G-Mouse-USB-GPS/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
